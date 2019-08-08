@@ -1,0 +1,116 @@
+#Neural network
+
+#Koristićemo jednostavan model neuralne mreže da predvidimo cene stanova
+
+#Ubacujemo našu bazu podataka 
+
+library(MASS)
+boston <- Boston
+View(boston)
+
+#proveravamo strukturu podataka 
+
+str(boston)
+
+#CRIM - per capita crime rate by town
+#ZN - proportion of residential land zoned for lots over 25,000 sq.ft.
+#INDUS - proportion of non-retail business acres per town.
+#CHAS - Charles River dummy variable (1 if tract bounds river; 0 otherwise)
+#NOX - nitric oxides concentration (parts per 10 million)
+#RM - average number of rooms per dwelling
+#AGE - proportion of owner-occupied units built prior to 1940
+#DIS - weighted distances to five Boston employment centres
+#RAD - index of accessibility to radial highways
+#TAX - full-value property-tax rate per 10,000 dollars
+#PTRATIO - pupil-teacher ratio by town
+#B - 1000(Bk - 0.63)^2 where Bk is the proportion of blacks by town
+#LSTAT - % lower status of the population
+#MEDV - Median value of owner-occupied homes in $1000's
+#Mi predviđamo medv
+
+
+#Proveravamo da li imamo nedostajuće podatke u bazi - nemamo.
+
+any(is.na(boston))
+
+#Instaliramo biblioteku sa funkcijama za kreiranje neuralne mreže
+
+install.packages('neuralnet',repos = 'http://cran.us.r-project.org')
+#Pozivamo paket
+
+library(neuralnet)
+
+#Da bi neuralne mreže mogle da rade i da bi rezultati mogli da se tumače, važno je da sve varijable budu skalirane 
+#(standardizovane ili centrirane na drugi način). Ovde ćemo primeniti linearno kompresovanje (x-min)/max-min
+
+#Uzimamo maksimume i minimume (argument 2 se odnosi na kolone, pošto su nam kolone varijable)
+maxs <- apply(boston, 2, max) 
+mins <- apply(boston, 2, min)
+
+#sada skaliramo po gornjoj formuli i kreiramo novu bazu
+
+scaled <- as.data.frame(scale(boston, center = mins, scale = maxs - mins))
+
+
+#Sada pozivamo biblioteku uz pomoć koje delimo našu bazu na trening bazu i test bazu, pri čemu ćemo 70% naše baze
+#iskoristiti za trening a onda celu bazu za pogađanje. Kreiramo test i trening bazu.
+
+library(caTools)
+split = sample.split(scaled$medv, SplitRatio = 0.70)
+
+train = subset(scaled, split == TRUE)
+test = subset(scaled, split == FALSE)
+
+
+
+#Iz nekog čudnog razloga, funkcija neuralnet ne prihvata parametar y~., što u ostalim funkcijama znači
+#da se sve varijable iz baze ubace kao prediktori. Zato koristimo trik
+
+n <- names(train)
+n
+f <- as.formula(paste("medv ~", paste(n[!n %in% "medv"], collapse = " + ")))
+f
+
+#Kreiramo model za našu neuralnu mrežu. Želimo da predvidimo cene stanova
+# na osnovu svih podataka koje imamo
+# Kreiramo model koji će imati dva niza čvorova, od 5 i 3 čvora (hidden). 
+#S obzirom da nam je varijabla koju predviđamo kontinualna, stavljamo true za linear.output.
+nn <- neuralnet(f, data=train,hidden=c(5,3),linear.output=TRUE)
+
+#Sada možemo da plotujemo naš model neuralne mreže. Crne linije pokazuju veze svakog nivoa i 
+#pondera za svaku vezu dok plave linije pokazuju bias (može se tumačiti slično kao intercept u linearnoj
+#regresiji). Mnogi posmatraju neuralne mreže kao crnu kutiju, a ova je naročito crna kutija
+#jer joj nisu date predeterminisani čvorovi
+
+plot(nn)
+
+#Sada na osnovu neuralne mreže možemo predvideti vrednosti cene stana. U funkciju compute
+#ubacujemo naš model "nn" i prvih trinaest varijabli bez varijable koju predviđamo.
+#naša predviđena varijabla iz mreže je net.rezult
+
+predicted <- compute(nn, test[1:13])
+
+#Da bi ova predviđena vrednost bila čitljiva, moramo je vratiti u izvorno stanje
+#prema našoj formuli. Dakle x=predicted*(max-min) + min
+
+true.predictions <- predicted$net.result*(max(boston$medv)-min(boston$medv))+min(boston$medv)
+
+#isto radimo i za test data
+
+test.r <- (test$medv)*(max(boston$medv)-min(boston$medv))+min(boston$medv)
+
+#računamo grešku predviđanja
+
+MSE.nn <- sum((test.r - true.predictions)^2)/nrow(test)
+MSE.nn
+
+#Želimo da grafički prikažemo grešku
+
+#pravimo novi data.frame sa predviđenim i pravim vrednostima
+
+error <- data.frame(test.r, true.predictions)
+
+library(ggplot2)
+head(error)
+ggplot(error, aes(true.predictions, test.r)) + geom_point() + stat_smooth()
+       
